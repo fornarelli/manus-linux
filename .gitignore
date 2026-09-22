@@ -1,0 +1,23 @@
+# --- Proprietary MANUS binaries (from the SDK package, not redistributable) ---
+# Restore by unpacking MANUS_Core_2.5.1_SDK and copying ManusSDK/lib in.
+sdkclient/ManusSDK/lib/
+minimalclient/ManusSDK/lib/
+
+# --- Build output ---
+sdkclient/objects/
+sdkclient/build-remote/
+sdkclient/*.out
+minimalclient/objects/
+minimalclient/*.out
+*.o
+
+# --- VM: disk image and guest scratch ---
+vm/storage/
+vm/shared/
+vm/.guest-ip
+
+# --- ROS2 workspace ---
+ros2/build/
+ros2/install/
+ros2/log/
+ros2/src/ManusSDK/lib/

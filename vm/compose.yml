@@ -1,0 +1,46 @@
+# Windows VM running MANUS Core 2.5.1, for glove access via SDK *remote* mode.
+#
+# Networking: macvlan + dockur DHCP mode, so the Windows guest is a real device
+# on the LAN rather than behind QEMU user-mode NAT. The SDK finds Core by UDP
+# broadcast, which cannot traverse NAT.
+#
+# Do not run this directly - use `sudo ./setup.sh`, which creates the docker
+# network, the host shim interface and the routes, then starts this. See README.
+services:
+  windows:
+    image: dockurr/windows
+    container_name: manus-windows
+    environment:
+      VERSION: "11"
+      RAM_SIZE: "8G"
+      CPU_CORES: "6"
+      DISK_SIZE: "96G"
+      # Windows gets its OWN IP from the router (not QEMU NAT), so the SDK's
+      # UDP broadcast discovery can reach it from the LAN.
+      DHCP: "Y"
+      # MANUS Sensor Dongle (USB 3325:0049)
+      ARGUMENTS: "-device usb-host,vendorid=0x3325,productid=0x0049"
+    devices:
+      - /dev/kvm
+      - /dev/net/tun
+      - /dev/vhost-net
+    # live view of USB nodes - a `devices:` entry is only a start-time snapshot,
+    # so a dongle that re-enumerates (firmware update, replug) goes invisible
+    volumes:
+      - /dev/bus/usb:/dev/bus/usb
+      - ./storage:/storage
+      - ./shared:/shared
+    device_cgroup_rules:
+      # dockur requires this broad rule for DHCP mode; it also covers the
+      # USB major (189) needed for dongle passthrough across re-enumeration.
+      - 'c *:* rwm'
+    cap_add:
+      - NET_ADMIN
+    networks:
+      - manus-lan
+    stop_grace_period: 2m
+    restart: "no"          # never auto-start; bring it up only via ./setup.sh
+
+networks:
+  manus-lan:
+    external: true

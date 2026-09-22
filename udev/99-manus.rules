@@ -1,0 +1,5 @@
+# MANUS glove devices (vendor 3325) - readable/writable without root.
+# Install:  sudo cp 99-manus.rules /etc/udev/rules.d/
+#           sudo udevadm control --reload-rules && sudo udevadm trigger
+SUBSYSTEMS=="usb", ATTRS{idVendor}=="3325", MODE:="0666"
+KERNEL=="hidraw*", ATTRS{idVendor}=="3325", MODE:="0666"

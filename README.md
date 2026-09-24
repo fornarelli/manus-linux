@@ -36,10 +36,11 @@ the legacy case.
 **Once per machine:**
 
 ```sh
-make udev       # dongle permissions                                  [sudo]
-make image      # gRPC 1.28.1 container image - slow, builds from source
-make client     # SDK client, remote-capable
-make ros2       # ROS2 workspace
+make udev        # dongle permissions                                 [sudo]
+make image       # gRPC 1.28.1 container image - slow, builds from source
+make client      # SDK client, remote-capable
+make ros2-image  # ROS2 container image
+make ros2        # ROS2 workspace, built in that image
 ```
 
 **Each session:**
@@ -49,14 +50,16 @@ make vm-up      # Windows VM + networking; prints the viewer URL       [sudo]
                 # then start MANUS Core inside Windows
 make run        # SDK client, remote mode
 make ros2-run   # or: ROS2 publisher
-make vm-down    # stop the VM, hand the dongle back
+make ros2-shell # shell with ROS2 sourced, for `ros2 topic echo` / `hz`
+make down       # stop everything and hand the dongle back
 ```
 
 ### Requirements
 
-`build-essential cmake libncurses-dev libudev-dev libusb-1.0-0-dev arp-scan`,
-Docker, and ROS2 if you want the publisher. The SDK binaries are not in the repo —
-see [Binaries](#binaries-are-not-tracked).
+Docker, `arp-scan`, and — only for `client-native` — `build-essential cmake
+libncurses-dev libudev-dev libusb-1.0-0-dev`. **A ROS2 installation is not
+required**; the publisher builds and runs in a container. The SDK binaries are
+not in the repo — see [Binaries](#binaries-are-not-tracked).
 
 `ROS_DISTRO` defaults to `jazzy`, `IMAGE` to `manus-linux`; override on the
 command line.
@@ -69,7 +72,11 @@ command line.
 | `image` | builds `sdkclient/Dockerfile` — gRPC **1.28.1** from source, which no distro packages |
 | `client` | builds inside that image against the full `libManusSDK.so`, needed for remote mode |
 | `client-native` | host build against `libManusSDK_Integrated.so`; standalone only, and integrated mode needs a license feature legacy licenses lack |
+| `ros2-image` | ROS2 build/run environment, so no host ROS2 install is needed |
+| `ros2` / `ros2-run` | build and run the publisher in that image, `--network host` so its topics reach the host's DDS domain |
+| `ros2-shell` | interactive shell with ROS2 and the workspace sourced |
 | `vm-up` | runs `vm/setup.sh`: macvlan network, host shim, routes, VM, guest discovery |
+| `down` | stops the clients, the VM and the network. Matches on this repo's images, so unrelated containers are untouched. `vm-down` stops only the VM |
 | `run` | the client **inside** the container on `manus-lan`, so it and the Windows guest are macvlan siblings and can reach each other directly |
 
 ### Local patches to the SDK client
@@ -86,10 +93,18 @@ Re-apply if you drop in a fresh SDK package:
 MANUS ships a ROS2 package only in 3.2.x, and it bundles the 3.2 library with the
 `linuxTarget` check. This is that package ported to 2.5.1.
 
+(The 2.5 downloads page calls its SDK *"including ROS2 Package"*, but the 2.5.1
+archive contains only the four client examples — no ROS2 package. Hence the port.)
+
 ```sh
+make ros2-image  # once
 make ros2        # build
 make ros2-run    # run
+make ros2-shell  # then, elsewhere: ros2 topic echo /manus_glove_0
 ```
+
+No host ROS2 install is needed — both build and run happen in the container.
+`ros2-native` builds against a host installation instead, if you have one.
 
 Publishes `/manus_glove_0` and `/manus_glove_1` at **120 Hz**, each carrying 25
 raw skeleton nodes (position + quaternion) and 20 ergonomics values, plus
@@ -122,7 +137,10 @@ Override with `make ros2-run CORE_IP=<addr>`, or delete the file to autodiscover
 4. **gRPC.** Remote mode needs the full library, which links gRPC **1.28.1**. A
    matched set is vendored in `ros2/src/ManusSDK/lib/thirdparty/`, taken from the
    container image.
-5. **RPATH not RUNPATH.** `$ORIGIN` has to reach `libManusSDK.so`'s *own*
+5. **Container needs the SDK's own deps.** `libManusSDK.so` links libusb, libudev
+   and libzmq; the ROS2 image installs them, or the link fails with
+   `undefined reference to libusb_init`.
+6. **RPATH not RUNPATH.** `$ORIGIN` has to reach `libManusSDK.so`'s *own*
    dependencies. `DT_RUNPATH` is not inherited by transitive deps, so the build
    forces `DT_RPATH` via `-Wl,--disable-new-dtags`.
 
@@ -177,6 +195,51 @@ since the shim and routes do not persist.
 
 The first run installs Windows unattended and downloads several GB.
 
+### Installing MANUS Core in the VM
+
+`make vm-up` gives you a Windows desktop with the dongle attached, but Core is not
+installed — do this once, inside the guest.
+
+1. **Download the version-locked installer**, not the web installer. The web
+   installer will offer to update you to 3.x, which rejects legacy licenses.
+
+   [`MANUS_Core_2.5.1_Version_Locked_Installer.zip`](https://static.manus-meta.com/resources/manus_core_2/version_locked_installer/MANUS_Core_2.5.1_Version_Locked_Installer.zip)
+   — from the [2.5 downloads page](https://docs.manus-meta.com/2.5.0/Resources/).
+   No login required.
+
+   Easiest route in: drop the zip in `vm/shared/`, which appears as drive `Z:`
+   inside Windows.
+
+2. **Run the setup wizard**, then launch MANUS Core. It opens the Dashboard and
+   keeps running in the tray; Core must be running for the gloves to work.
+
+3. **Create a user.** Core prompts for one on first launch — one per person
+   wearing gloves. At least one must exist. When it asks about gloves vs.
+   trackers, choose gloves; there is no tracking system here.
+
+4. **Pair the gloves** from the Dashboard's Devices tab. Per-product instructions:
+   [Quantum Metagloves](https://docs.manus-meta.com/2.5.0/Products/Quantum%20Mocap%20Metagloves/FirstTimeSetup/),
+   [Prime 3](https://docs.manus-meta.com/2.5.0/Products/Prime%203%20Mocap/FirstTimeSetup/),
+   [Prime 2/X](https://docs.manus-meta.com/2.5.0/Products/Prime%202%20and%20Prime%20X/FirstTimeSetup/).
+
+5. **Calibrate** from the same tab. Worth doing properly — it is what the joint
+   angles are measured against.
+
+6. **Check Devices → License.** It should name your tier. If the dongle shows as
+   unlicensed, nothing downstream will work; see [Licensing](#licensing).
+
+Afterwards, only steps from *Each session* are needed: `make vm-up`, start Core
+from the tray, then `make run` or `make ros2-run`.
+
+**If the Linux client finds the host but cannot connect**, check Windows Firewall
+— a fresh install blocks inbound connections on networks it treats as Public,
+which stops the SDK's TCP connection while leaving UDP discovery working. Setting
+the network to Private, or allowing MANUS Core through, fixes it.
+
+Pairing, calibration, firmware updates and device telemetry all live in the
+Dashboard. In remote mode the Linux side only consumes data — everything about
+managing the devices happens here.
+
 ### Why it needs root
 
 Creating a macvlan interface, adding routes, and ARP-scanning for the guest all
@@ -199,6 +262,9 @@ with its default NAT bridge would also avoid it, at the cost of not using Docker
 
 ### Other things to know
 
+- **ROS2 containers need `--ipc=host`.** Fast DDS moves data over `/dev/shm`;
+  without a shared IPC namespace, `ros2 topic list` works but `echo` returns
+  nothing. The Makefile passes it.
 - **The VM owns the dongle while it runs.** `make vm-down` returns it.
 - **Any device reset breaks passthrough** — firmware updates, replugging. QEMU does
   not re-attach. Restart the container; confirm the dongle's interfaces under
